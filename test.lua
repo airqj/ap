@@ -36,8 +36,9 @@ function get_signal_by_mac(mac)
 end
 
 function get_snr_by_mac(mac)
-	cmd_get_snr_by_mac = cmd_get_snr_by_mac_head..mac..cmd_get_snr_by_mac_tail
-	return os.capture(cmd_get_snr_by_mac)
+	local cmd_get_snr_by_mac = cmd_get_snr_by_mac_head..mac..cmd_get_snr_by_mac_tail
+	local temp= tonumber(os.capture(cmd_get_snr_by_mac))
+	return temp
 end
 
 function cmp(mac)
@@ -94,22 +95,37 @@ cmd_get_signal_tail = " -A 9 \| grep \"signal\:\" \| awk \'\{print $2\}\'"
 cmd_get_snr_by_mac_head  = "iwinfo wlan0 assoclist | grep "
 cmd_get_snr_by_mac_tail  = " \| awk '{print $8}' \| sed \'s\/\)\/\/g\'"
 
+--[[
 res = tostring(os.capture(cmd_get_mac))
 for mac in string.gmatch(res,"[^%s]+") do
  	      	connected_table[mac]=get_signal_by_mac(mac)
 -- 		connected_table[mac] = {get_snr_by_mac(mac),os.time()}    	
 end
+]]
+
+while true do
+	res = string.upper(tostring(os.capture(cmd_get_mac)))
+	for mac in string.gmatch(res,"[^%s]+") do
+		local snr = get_snr_by_mac(mac)
+		print("mac:"..mac..",snr: "..snr)
+		if snr < threshold then
+			print("disassociate: "..mac)
+			disassoc_sta(mac)
+		end
+	end
+	sleep(2)
+end
 
 --[[
 while true do
-	res = tostring(os.capture(cmd_get_mac))
+	res = string.upper(tostring(os.capture(cmd_get_mac)))
 	for mac in string.gmatch(res,"[^%s]+") do
 		if connected_table[mac] == nil then
-		      	connected_table[mac]=get_signal_by_mac(mac)
-		elseif cmp(mac) and not sta_is_reassoc(mac) then
-			print("disassoc sta: "..mac)
-			os.execute(cmd_disassoc_sta..mac)	
-			table.insert(disassociated_array,mac)
+			connected_table[mac] = get_snr_by_mac(mac)
+		elseif connected_table[mac] < threshold then
+			syslog("disassociate:"..mac.."because snr is "..connected_table[mac])
+			disassoc_sta(mac)
+			connected_table[mac]=nil
 		end
 	end
 	sleep(5)
@@ -117,6 +133,7 @@ end
 ]]
 
 -- connected_table[mac]={duration,expire_time}
+--[[
 while true do
 	res = string.upper(tostring(os.capture(cmd_get_mac)))
 	for mac in string.gmatch(res,"[^%s]+") do
@@ -135,3 +152,4 @@ while true do
 
 	sleep(interval)
 end
+]]
