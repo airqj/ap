@@ -1,6 +1,7 @@
 #!/usr/bin/lua
 
 threshold=20
+expire_time=10
 
 function syslog(log)
 	os.execute("logger "..log)
@@ -49,6 +50,20 @@ function cmp(mac)
 	end
 end
 
+function sta_is_expire(mac,snr_current)
+	local time    = connected_table[mac][2]
+	local expire_time = connected_table[mac][3]
+
+	if snr_current < threshold and time >= expire_time then
+		return true
+	elseif snr_current < threshold then
+		connected_table[mac][2] = time + interval
+	elseif snr_current > threshold then
+		connected_table[mac][2] = 0
+	end
+	return false
+end
+
 function sta_is_reassoc(mac)
 	for index=1, #disassociated_array do
 		if disassociated_array[index] == mac then
@@ -56,6 +71,18 @@ function sta_is_reassoc(mac)
 		end
 	end
 	return false
+end
+
+function disassoc_sta(mac)
+	os.execute(cmd_disassoc_sta..mac)
+end
+
+function insert_sta_to_disassociated_array(mac)
+	table.insert(disassociated_array,mac)
+end
+
+function rm_sta_from_tab(table,mac) -- table: connected_table or disassociated_array
+	table[mac]=nil
 end
 
 connected_table = {}
@@ -89,18 +116,22 @@ while true do
 end
 ]]
 
+-- connected_table[mac]={duration,expire_time}
 while true do
 	res = string.upper(tostring(os.capture(cmd_get_mac)))
 	for mac in string.gmatch(res,"[^%s]+") do
-	--	local signal = math.abs(get_signal_by_mac(mac))
-	--	print(signal)
 		local snr = get_snr_by_mac(mac)
-		print(snr)
-		if signal > threshold then
-			syslog("disassociate "..mac)
-			os.execute(cmd_disassoc_sta..mac)
+		if connected_table[mac] == nil and disassociated_array[mac] == nil then
+			connected_table[mac]= {0,expire_time}
+		elseif connected_table[mac] == nil and disassociated_array[mac] then
+			connected_table[mac]= {0,expire_time}
+			rm_sta_from_tab(disassociated_array,mac)
+		elseif sta_is_expire(mac,snr) then
+			disassoc_sta(mac)
+			rm_sta_from_tab(connected_table,mac)
+			table.insert(disassociated_array,mac)
 		end
 	end
 
-	sleep(5)
+	sleep(interval)
 end
